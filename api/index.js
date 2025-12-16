@@ -1,5 +1,3 @@
-import fetch from "node-fetch";
-
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const TG_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -11,111 +9,139 @@ const headers = {
   Authorization: `Bearer ${SERVICE_KEY}`,
 };
 
-/* ================= TELEGRAM ================= */
-async function tg(text) {
+async function tg(text, buttons = null) {
   await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: ADMIN_CHAT,
       text,
+      reply_markup: buttons ? { inline_keyboard: buttons } : undefined,
     }),
   });
 }
 
-/* ================= MAIN ================= */
 export default async function handler(req, res) {
+  try {
+    /* ===== TEST ===== */
+    if (req.method === "GET") {
+      return res.status(200).send("INZO API RUNNING ✅");
+    }
 
-  /* ========= ADMIN COMMANDS ========= */
-  if (req.method === "POST" && req.body?.message) {
-    const msg = req.body.message;
-    if (msg.chat.id != ADMIN_CHAT) return res.json({ ok: true });
+    /* ===== DEPOSIT CREATE ===== */
+    if (req.url === "/api/deposit") {
+      const { user_id, amount, utr, screenshot } = req.body;
 
-    const text = msg.text || "";
-
-    /* ===== ADD PLAN ===== */
-    if (text.startsWith("/addplan")) {
-      // format: /addplan Silver 500
-      const [, name, price] = text.split(" ");
-
-      await fetch(`${SUPABASE_URL}/rest/v1/plans`, {
+      await fetch(`${SUPABASE_URL}/rest/v1/deposits`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ name, price }),
+        body: JSON.stringify({ user_id, amount, utr, screenshot }),
       });
 
-      await tg(`✅ Plan added\nName: ${name}\nPrice: ₹${price}`);
+      await tg(
+        `💰 NEW DEPOSIT\nUser: ${user_id}\n₹${amount}\nUTR: ${utr}`,
+        [[
+          { text: "✅ Approve", callback_data: `d_ok:${user_id}:${amount}` },
+          { text: "❌ Reject", callback_data: `d_no:${user_id}` },
+        ]]
+      );
+
+      return res.json({ ok: true });
     }
 
-    /* ===== DELETE PLAN ===== */
-    if (text.startsWith("/delplan")) {
-      // format: /delplan PLAN_ID
-      const [, id] = text.split(" ");
+    /* ===== WITHDRAW CREATE ===== */
+    if (req.url === "/api/withdraw") {
+      const { user_id, amount, method, details } = req.body;
 
-      await fetch(`${SUPABASE_URL}/rest/v1/plans?id=eq.${id}`, {
-        method: "DELETE",
+      const balRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/balances?user_id=eq.${user_id}`,
+        { headers }
+      );
+      const bal = (await balRes.json())[0];
+
+      if (!bal || Number(bal.ammount) < Number(amount)) {
+        return res.status(400).json({ error: "Insufficient balance" });
+      }
+
+      await fetch(`${SUPABASE_URL}/rest/v1/withdraws`, {
+        method: "POST",
         headers,
+        body: JSON.stringify({ user_id, amount, method, details }),
       });
 
-      await tg("🗑️ Plan deleted");
+      await tg(
+        `💸 WITHDRAW\nUser: ${user_id}\n₹${amount}`,
+        [[
+          { text: "✅ Approve", callback_data: `w_ok:${user_id}:${amount}` },
+          { text: "❌ Reject", callback_data: `w_no:${user_id}` },
+        ]]
+      );
+
+      return res.json({ ok: true });
     }
 
-    /* ===== DISABLE PLAN ===== */
-    if (text.startsWith("/disableplan")) {
-      const [, id] = text.split(" ");
+    /* ===== TELEGRAM CALLBACK ===== */
+    if (req.body?.callback_query) {
+      const q = req.body.callback_query;
+      const [type, uid, amt] = q.data.split(":");
+      const amount = Number(amt || 0);
 
-      await fetch(`${SUPABASE_URL}/rest/v1/plans?id=eq.${id}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ status: "disabled" }),
-      });
+      if (type === "d_ok") {
+        const b = await fetch(`${SUPABASE_URL}/rest/v1/balances?user_id=eq.${uid}`, { headers });
+        const cur = (await b.json())[0];
 
-      await tg("🚫 Plan disabled");
+        await fetch(`${SUPABASE_URL}/rest/v1/balances?user_id=eq.${uid}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ ammount: Number(cur.ammount) + amount }),
+        });
+
+        await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            user_id: uid,
+            title: "Deposit Approved",
+            body: `₹${amount} added`,
+          }),
+        });
+
+        await tg("✅ Deposit Approved");
+      }
+
+      if (type === "w_ok") {
+        const b = await fetch(`${SUPABASE_URL}/rest/v1/balances?user_id=eq.${uid}`, { headers });
+        const cur = (await b.json())[0];
+
+        await fetch(`${SUPABASE_URL}/rest/v1/balances?user_id=eq.${uid}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ ammount: Number(cur.ammount) - amount }),
+        });
+
+        await fetch(`${SUPABASE_URL}/rest/v1/messages`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            user_id: uid,
+            title: "Withdraw Approved",
+            body: `₹${amount} withdrawn`,
+          }),
+        });
+
+        await tg("✅ Withdraw Approved");
+      }
+
+      if (type.endsWith("_no")) {
+        await tg("❌ Rejected");
+      }
+
+      return res.json({ ok: true });
     }
 
-    /* ===== ENABLE PLAN ===== */
-    if (text.startsWith("/enableplan")) {
-      const [, id] = text.split(" ");
-
-      await fetch(`${SUPABASE_URL}/rest/v1/plans?id=eq.${id}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ status: "active" }),
-      });
-
-      await tg("✅ Plan enabled");
-    }
-
-    /* ===== ADD BALANCE ===== */
-    if (text.startsWith("/addbal")) {
-      // /addbal USER_ID 100
-      const [, uid, amt] = text.split(" ");
-
-      await fetch(`${SUPABASE_URL}/rest/v1/balances?user_id=eq.${uid}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ ammount: `ammount + ${amt}` }),
-      });
-
-      await tg(`💰 ₹${amt} added to user`);
-    }
-
-    /* ===== DEDUCT BALANCE ===== */
-    if (text.startsWith("/minusbal")) {
-      // /minusbal USER_ID 50
-      const [, uid, amt] = text.split(" ");
-
-      await fetch(`${SUPABASE_URL}/rest/v1/balances?user_id=eq.${uid}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ ammount: `ammount - ${amt}` }),
-      });
-
-      await tg(`➖ ₹${amt} deducted from user`);
-    }
-
-    return res.json({ ok: true });
+    res.status(404).end();
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "SERVER_ERROR" });
   }
-
-  res.status(404).end();
 }

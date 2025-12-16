@@ -1,33 +1,45 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-/* ===== CONFIG ===== */
-const supabase = createClient(
-  "SUPABASE_URL",
-  "SUPABASE_ANON_KEY"
-);
+/* ================= CONFIG ================= */
+const SUPABASE_URL = "https://eppujqdqknulwbbycglb.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwcHVqcWRxa251bHdiYnljZ2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzEwMzMsImV4cCI6MjA4MTQ0NzAzM30.vBoeDcWu_ZVE8ZejlzDgq_6n73P0IBSISmwcaF4rRuo";
 
-function el(id) {
-  return document.getElementById(id);
-}
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/* ===== REGISTER ===== */
+const el = (id) => document.getElementById(id);
+
+/* ================= AUTH ================= */
+
+// REGISTER
 window.register = async () => {
-  const name = el("name").value;
-  const mobile = el("mobile").value;
-  const password = el("password").value;
-  const ref = el("ref").value || null;
+  const name = el("name").value.trim();
+  const mobile = el("mobile").value.trim();
+  const password = el("password").value.trim();
+  const ref = el("ref") ? el("ref").value.trim() : null;
+
+  if (!name || !mobile || !password) {
+    alert("All fields required");
+    return;
+  }
 
   const email = `${mobile}@inzo.app`;
 
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) return alert(error.message);
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+  });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
 
   await supabase.from("users").insert({
     id: data.user.id,
     name,
     mobile,
     referral_code: mobile,
-    referred_by: ref,
+    referred_by: ref || null,
   });
 
   await supabase.from("balances").insert({
@@ -35,26 +47,43 @@ window.register = async () => {
     ammount: 0,
   });
 
-  alert("Account created");
+  alert("Account created, please login");
   location.href = "/login.html";
 };
 
-/* ===== LOGIN ===== */
+// LOGIN
 window.login = async () => {
-  const mobile = el("mobile").value;
-  const password = el("password").value;
+  const mobile = el("mobile").value.trim();
+  const password = el("password").value.trim();
   const email = `${mobile}@inzo.app`;
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return alert(error.message);
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
 
   location.href = "/profile.html";
 };
 
-/* ===== PROFILE ===== */
+// LOGOUT
+window.logout = async () => {
+  await supabase.auth.signOut();
+  location.href = "/login.html";
+};
+
+/* ================= PROFILE ================= */
+
 window.loadProfile = async () => {
   const { data } = await supabase.auth.getSession();
-  if (!data.session) return location.href = "/login.html";
+  if (!data.session) {
+    location.href = "/login.html";
+    return;
+  }
 
   const uid = data.session.user.id;
 
@@ -64,10 +93,13 @@ window.loadProfile = async () => {
     .eq("user_id", uid)
     .single();
 
-  el("bal").innerText = bal?.ammount || 0;
+  if (el("bal")) {
+    el("bal").innerText = bal?.ammount || 0;
+  }
 };
 
-/* ===== DEPOSIT ===== */
+/* ================= DEPOSIT ================= */
+
 window.deposit = async () => {
   const { data } = await supabase.auth.getSession();
   const user = data.session.user;
@@ -76,25 +108,41 @@ window.deposit = async () => {
   const utr = el("utr").value;
   const file = el("ss").files[0];
 
-  const { data: up } = await supabase.storage
+  if (!amount || !utr || !file) {
+    alert("All fields required");
+    return;
+  }
+
+  const upload = await supabase.storage
     .from("deposit_screenshots")
     .upload(`${user.id}/${Date.now()}.png`, file);
 
-  await fetch("/api/deposit", {
+  if (upload.error) {
+    alert("Upload failed");
+    return;
+  }
+
+  const res = await fetch("/api/deposit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       user_id: user.id,
       amount,
       utr,
-      screenshot: up.path,
+      screenshot: upload.data.path,
     }),
   });
 
-  alert("Deposit submitted");
+  const r = await res.json();
+  if (r.error) {
+    alert(r.error);
+  } else {
+    alert("Deposit submitted, wait for approval");
+  }
 };
 
-/* ===== WITHDRAW ===== */
+/* ================= WITHDRAW ================= */
+
 window.withdraw = async () => {
   const { data } = await supabase.auth.getSession();
   const user = data.session.user;
@@ -103,7 +151,12 @@ window.withdraw = async () => {
   const method = el("method").value;
   const details = el("details").value;
 
-  const r = await fetch("/api/withdraw", {
+  if (!amount || !method || !details) {
+    alert("All fields required");
+    return;
+  }
+
+  const res = await fetch("/api/withdraw", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -114,28 +167,57 @@ window.withdraw = async () => {
     }),
   });
 
-  const j = await r.json();
-  if (j.error) return alert(j.error);
-
-  alert("Withdraw submitted");
+  const r = await res.json();
+  if (r.error) {
+    alert(r.error);
+  } else {
+    alert("Withdraw request submitted");
+  }
 };
 
-/* ===== LOGOUT ===== */
-window.logout = async () => {
-  await supabase.auth.signOut();
-  location.href = "/login.html";
+/* ================= MESSAGES ================= */
 
-  /* ===== LOAD PLANS ===== */
-window.onload = async () => {
+window.loadMessages = async () => {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) return;
+
+  const uid = data.session.user.id;
+
+  const { data: msgs } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("user_id", uid)
+    .order("created_at", { ascending: false });
+
+  const box = el("messages");
+  if (!box) return;
+
+  box.innerHTML = "";
+
+  msgs.forEach((m) => {
+    box.innerHTML += `
+      <div style="border:1px solid #ccc;padding:10px;margin-bottom:10px">
+        <b>${m.title}</b>
+        <p>${m.body}</p>
+      </div>
+    `;
+  });
+};
+
+/* ================= PLANS (HOME) ================= */
+
+window.loadPlans = async () => {
   const { data: plans } = await supabase
     .from("plans")
     .select("*")
     .eq("status", "active");
 
-  const box = document.getElementById("plans");
+  const box = el("plans");
   if (!box) return;
 
-  plans.forEach(p => {
+  box.innerHTML = "";
+
+  plans.forEach((p) => {
     box.innerHTML += `
       <div class="card">
         <h3>${p.name}</h3>
@@ -145,4 +227,3 @@ window.onload = async () => {
     `;
   });
 };
-}

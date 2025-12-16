@@ -1,21 +1,109 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Deposit</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <meta charset="UTF-8" />
+  <title>Deposit – INZO WORLD</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f6fa;
+      padding: 15px;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+    .card {
+      background: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    label {
+      font-size: 14px;
+      margin-top: 10px;
+      display: block;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 6px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+    }
+    button {
+      background: #2d98da;
+      color: #fff;
+      border: none;
+      margin-top: 15px;
+    }
+    button:active {
+      opacity: 0.8;
+    }
+    .note {
+      font-size: 13px;
+      color: #555;
+      margin-top: 8px;
+    }
+  </style>
 </head>
+
 <body>
 
-<h3>Deposit</h3>
+  <h2>Deposit</h2>
 
-<div id="account"></div>
+  <!-- PAYMENT DETAILS -->
+  <div class="card">
+    <h3>Payment Details</h3>
+    <p><b>Bank:</b> INZO WORLD</p>
+    <p><b>Account Name:</b> INZO TEAM</p>
+    <p><b>Account No:</b> 1234567890</p>
+    <p><b>IFSC:</b> INZO0001234</p>
+    <p><b>UPI:</b> inzo@upi</p>
 
-<input id="amount" placeholder="Amount">
-<input id="utr" placeholder="UTR">
-<input type="file" id="ss">
+    <p class="note">
+      Is account / UPI par payment karo, phir neeche details bharo.
+    </p>
+  </div>
 
-<button onclick="deposit()">Submit</button>
+  <!-- DEPOSIT FORM -->
+  <div class="card">
+    <h3>Submit Deposit</h3>
 
-<script type="module" src="/js/app.js"></script>
+    <label>Amount</label>
+    <input
+      type="number"
+      id="amount"
+      placeholder="Enter deposit amount"
+    />
+
+    <label>UTR / Transaction ID</label>
+    <input
+      type="text"
+      id="utr"
+      placeholder="Enter UTR / Transaction ID"
+    />
+
+    <label>Payment Screenshot</label>
+    <input
+      type="file"
+      id="ss"
+      accept="image/*"
+    />
+
+    <button onclick="deposit()">Submit Deposit</button>
+
+    <p class="note">
+      Deposit submit karne ke baad admin approval ka wait karein.
+    </p>
+  </div>
+
+  <!-- SCRIPT -->
+  <script type="module" src="/js/app.js"></script>
+
 </body>
 </html>
