@@ -1,95 +1,148 @@
-// ================= SUPABASE CONFIG =================
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-const SUPABASE_URL = "https://eppujqdqknulwbbycglb.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwcHVqcWRxa251bHdiYnljZ2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4NzEwMzMsImV4cCI6MjA4MTQ0NzAzM30.vBoeDcWu_ZVE8ZejlzDgq_6n73P0IBSISmwcaF4rRuo";
+/* ===== CONFIG ===== */
+const supabase = createClient(
+  "SUPABASE_URL",
+  "SUPABASE_ANON_KEY"
+);
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// ================= HELPERS =================
-function qs(id) {
+function el(id) {
   return document.getElementById(id);
 }
 
-// ================= REGISTER =================
-window.register = async function () {
-  const name = qs("name").value;
-  const mobile = qs("mobile").value;
-  const password = qs("password").value;
-  const ref = qs("ref").value || null;
+/* ===== REGISTER ===== */
+window.register = async () => {
+  const name = el("name").value;
+  const mobile = el("mobile").value;
+  const password = el("password").value;
+  const ref = el("ref").value || null;
 
-  if (!name || !mobile || !password) {
-    alert("All fields required");
-    return;
-  }
-
-  // Email fake bana rahe hain (OTP / email nahi chahiye)
   const email = `${mobile}@inzo.app`;
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) return alert(error.message);
 
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  // extra user data
   await supabase.from("users").insert({
     id: data.user.id,
     name,
     mobile,
+    referral_code: mobile,
     referred_by: ref,
   });
 
-  alert("Account created. Login now.");
+  await supabase.from("balances").insert({
+    user_id: data.user.id,
+    ammount: 0,
+  });
+
+  alert("Account created");
   location.href = "/login.html";
 };
 
-// ================= LOGIN =================
-window.login = async function () {
-  const mobile = qs("mobile").value;
-  const password = qs("password").value;
-
+/* ===== LOGIN ===== */
+window.login = async () => {
+  const mobile = el("mobile").value;
+  const password = el("password").value;
   const email = `${mobile}@inzo.app`;
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return alert(error.message);
 
   location.href = "/profile.html";
 };
 
-// ================= LOAD PROFILE =================
-window.loadProfile = async function () {
-  const { data: session } = await supabase.auth.getSession();
+/* ===== PROFILE ===== */
+window.loadProfile = async () => {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) return location.href = "/login.html";
 
-  if (!session.session) {
-    location.href = "/login.html";
-    return;
-  }
-
-  const userId = session.session.user.id;
+  const uid = data.session.user.id;
 
   const { data: bal } = await supabase
     .from("balances")
     .select("ammount")
-    .eq("user_id", userId)
+    .eq("user_id", uid)
     .single();
 
-  qs("bal").innerText = bal?.ammount || 0;
+  el("bal").innerText = bal?.ammount || 0;
 };
 
-// ================= LOGOUT =================
-window.logout = async function () {
+/* ===== DEPOSIT ===== */
+window.deposit = async () => {
+  const { data } = await supabase.auth.getSession();
+  const user = data.session.user;
+
+  const amount = el("amount").value;
+  const utr = el("utr").value;
+  const file = el("ss").files[0];
+
+  const { data: up } = await supabase.storage
+    .from("deposit_screenshots")
+    .upload(`${user.id}/${Date.now()}.png`, file);
+
+  await fetch("/api/deposit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id: user.id,
+      amount,
+      utr,
+      screenshot: up.path,
+    }),
+  });
+
+  alert("Deposit submitted");
+};
+
+/* ===== WITHDRAW ===== */
+window.withdraw = async () => {
+  const { data } = await supabase.auth.getSession();
+  const user = data.session.user;
+
+  const amount = el("amount").value;
+  const method = el("method").value;
+  const details = el("details").value;
+
+  const r = await fetch("/api/withdraw", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id: user.id,
+      amount,
+      method,
+      details,
+    }),
+  });
+
+  const j = await r.json();
+  if (j.error) return alert(j.error);
+
+  alert("Withdraw submitted");
+};
+
+/* ===== LOGOUT ===== */
+window.logout = async () => {
   await supabase.auth.signOut();
   location.href = "/login.html";
+
+  /* ===== LOAD PLANS ===== */
+window.onload = async () => {
+  const { data: plans } = await supabase
+    .from("plans")
+    .select("*")
+    .eq("status", "active");
+
+  const box = document.getElementById("plans");
+  if (!box) return;
+
+  plans.forEach(p => {
+    box.innerHTML += `
+      <div class="card">
+        <h3>${p.name}</h3>
+        <p>₹${p.price}</p>
+        <button onclick="location.href='/deposit.html'">Buy</button>
+      </div>
+    `;
+  });
 };
+}

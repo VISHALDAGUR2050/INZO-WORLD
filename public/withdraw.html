@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Withdraw</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<h3>Withdraw</h3>
+
+<select id="method">
+  <option value="bank">Bank</option>
+  <option value="upi">UPI</option>
+  <option value="usdt">USDT</option>
+</select>
+
+<input id="amount" placeholder="Amount">
+
+<textarea id="details" placeholder="Enter Bank / UPI / Wallet details"></textarea>
+
+<button onclick="withdraw()">Submit Withdraw</button>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
